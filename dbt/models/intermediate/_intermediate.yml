@@ -1,0 +1,112 @@
+version: 2
+
+models:
+  - name: int_emta__quarters_all_releases
+    description: EMTA values unpivoted to taxpayer x quarter x release (wide -> long).
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registry_code, tax_year, quarter, release_date, _source]
+      - expression_is_true:
+          description: Unpublished quarters must be empty; otherwise the publication rule is wrong.
+          arguments:
+            expression: "is_published or not has_any_value"
+    columns:
+      - name: quarter
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4]
+                quote: false
+
+  - name: int_emta__quarters_latest
+    description: >
+      One value per taxpayer x published quarter, from the newest release containing the key.
+      Keeps companies that EMTA dropped from later releases (is_in_latest_release = false).
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registry_code, tax_year, quarter]
+    columns:
+      - name: value_release_date
+        data_tests: [not_null]
+
+  - name: int_emta__revisions
+    description: Changed values between consecutive EMTA releases (taxpayer x quarter x metric).
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registry_code, tax_year, quarter, metric, release_date]
+    columns:
+      - name: metric
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['state_taxes', 'labour_taxes', 'turnover', 'employees']
+
+  - name: int_emta__company_attributes
+    description: Name, sector, county, and region per taxpayer as published in each EMTA release.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registry_code, release_date]
+    columns:
+      - name: region_group
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Tallinn', 'Harju (excl. Tallinn)', 'Tartu city', 'Rest of Estonia', 'Unknown']
+
+  - name: int_rik__company_history
+    description: >
+      SCD Type 2 register history from daily snapshots. valid_from inclusive, valid_to exclusive,
+      both observation dates. Absence from a snapshot is a version with is_present = false.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registry_code, valid_from]
+      - expression_is_true:
+          arguments:
+            expression: "valid_to is null or valid_to > valid_from"
+    columns:
+      - name: registry_code
+        data_tests: [not_null]
+
+  - name: int_rik__annual_reports_latest
+    description: One annual report per company x fiscal year (newest release).
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registry_code, fiscal_year]
+    columns:
+      - name: report_id
+        data_tests: [unique, not_null]
+      - name: element_report_id
+        data_tests: [unique]
+
+  - name: int_rik__element_values
+    description: One resolved value per report x element; conflicting copies become NULL.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [element_report_id, element_code]
+      - expression_is_true:
+          arguments:
+            expression: "(resolution = 'conflict') = (value is null)"
+    columns:
+      - name: resolution
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['single', 'identical_copies', 'conflict']
+
+  - name: int_rik__report_link_coverage
+    description: Link status between report rows and element rows.
+    columns:
+      - name: element_report_id
+        data_tests: [unique, not_null]
+      - name: link_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['linked', 'report_without_elements', 'elements_without_report', 'pdf_elements_only']

@@ -1,0 +1,18 @@
+# Airflow scheduler/UI with the pulse CLI in its own virtualenv, so Airflow's pinned
+# dependencies and dbt's never have to agree.
+FROM apache/airflow:3.3.2-python3.12
+
+USER root
+COPY pyproject.toml README.md /opt/pulse/
+COPY src /opt/pulse/src
+COPY dbt /opt/pulse/dbt
+RUN python -m venv /opt/pulse-venv \
+    && /opt/pulse-venv/bin/pip install --no-cache-dir "/opt/pulse[dbt]" \
+    && chown -R airflow:root /opt/pulse
+USER airflow
+
+ENV PULSE_BIN=/opt/pulse-venv/bin/pulse \
+    PULSE_DBT_DIR=/opt/pulse/dbt \
+    PULSE_DATA_DIR=/data \
+    AIRFLOW__CORE__LOAD_EXAMPLES=False \
+    AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags

@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pipeline:
+    name: lint, pytest, dbt build on synthetic data
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dbt,dev]"
+      - run: ruff check src tests app orchestration
+      - run: ruff format --check src tests orchestration
+      # Unit tests + end-to-end test: synthetic sources are served over local HTTP, downloaded,
+      # converted, and built with `dbt build` (all dbt data tests and unit tests).
+      - run: pytest -v
+      - name: dbt docs compile (catches broken refs/docs)
+        run: |
+          python tests/synthetic_sources.py "$RUNNER_TEMP/pulse-data"
+          PULSE_DATA_DIR="$RUNNER_TEMP/pulse-data" pulse dbt docs generate
+
+  airflow:
+    name: Airflow DAG integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: >
+          pip install "apache-airflow==3.3.2" pytest
+          --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt"
+      - run: pip install -e .
+      - run: airflow db migrate
+      - run: pytest -v tests/test_dags.py
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t eesti-company-pulse:ci .
+      - run: docker run --rm eesti-company-pulse:ci --help

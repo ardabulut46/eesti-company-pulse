@@ -1,0 +1,132 @@
+version: 2
+
+models:
+  - name: stg_emta__taxpayer_years
+    description: >
+      EMTA quarterly file, one row per taxpayer x tax year x release. Name, activity, and county
+      are the values at the release date, not in the tax year: they are identical for
+      every year of a company inside one release.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registry_code, tax_year, release_date, _source]
+    columns:
+      - name: registry_code
+        description: Text identifier. Companies have 8 digits; never cast to a number.
+        data_tests:
+          - not_null
+          - expression_is_true:
+              arguments:
+                expression: "regexp_full_match(registry_code, '[0-9]{8}')"
+              config: {where: "taxpayer_type = 'Company'"}
+      - name: taxpayer_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Company', 'Non-profit association', 'Foundation',
+                         'Government or state authority',
+                         'International organisation located in Estonia']
+      - name: activity_section_name
+        description: EMTAK section name in upper case (EMTA text). NULL for a few companies.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('emtak_sections')
+                field: section_name_emta
+      - name: county_raw
+        data_tests:
+          - expression_is_true:
+              arguments:
+                expression: "county_raw is null or (county is not null and municipality is not null)"
+      - name: release_date
+        data_tests: [not_null]
+      - name: state_taxes_q1
+        description: >
+          Taxes paid in euros. EMTA shows 0 when refunds exceed payments, so negatives must not
+          occur; NULL means no value published.
+        data_tests:
+          - expression_is_true:
+              arguments:
+                expression: "coalesce(least(state_taxes_q1, state_taxes_q2, state_taxes_q3, state_taxes_q4, labour_taxes_q1, labour_taxes_q2, labour_taxes_q3, labour_taxes_q4), 0) >= 0"
+      - name: employees_q1
+        data_tests:
+          - expression_is_true:
+              arguments:
+                expression: "coalesce(least(employees_q1, employees_q2, employees_q3, employees_q4), 0) >= 0"
+
+  - name: stg_rik__companies
+    description: Register basic data, one row per legal entity x daily snapshot.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registry_code, _snapshot_id]
+    columns:
+      - name: registry_code
+        data_tests: [not_null]
+      - name: legal_form
+        data_tests:
+          - expression_is_true:
+              arguments:
+                expression: "legal_form <> 'Füüsilisest isikust ettevõtja'"
+      - name: status_code
+        description: R registered, L in liquidation, N bankrupt. Deleted entities are absent from the file.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['R', 'L', 'N']
+      - name: ehak_code
+        description: Estonian administrative unit code. Text; leading zeros matter (0596).
+
+  - name: stg_rik__annual_reports
+    description: Annual-report general information, one row per report x monthly release.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [report_id, _snapshot_id]
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registry_code, fiscal_year, _snapshot_id]
+    columns:
+      - name: element_report_id
+        data_tests: [not_null]
+      - name: fiscal_year
+        data_tests: [not_null]
+
+  - name: stg_rik__report_elements
+    description: Annual-report elements in long (EAV) form, all years.
+    columns:
+      - name: report_id
+        data_tests: [not_null]
+      - name: value_text
+        data_tests:
+          - not_null
+          - expression_is_true:
+              arguments:
+                expression: "regexp_full_match(value_text, '-?[0-9]+(\\.[0-9]{1,2})?')"
+      - name: element_code
+        description: NULL only in the `PDF` table, whose rows are excluded downstream.
+        data_tests:
+          - not_null:
+              config: {where: "table_name <> 'PDF'"}
+
+  - name: stg_pipeline__snapshots
+    description: Snapshot catalogue (manifest) with conversion row counts.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [source, snapshot_id]
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [source, sha256]
+    columns:
+      - name: is_converted
+        description: Every stored snapshot must have been converted before models are built.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [true]
+      - name: rows_total
+        data_tests:
+          - expression_is_true:
+              arguments:
+                expression: "rows_total = rows_kept + rows_dropped"

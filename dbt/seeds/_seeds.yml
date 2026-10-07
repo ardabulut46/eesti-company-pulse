@@ -1,0 +1,18 @@
+version: 2
+
+seeds:
+  - name: emtak_sections
+    description: >
+      EMTAK 2008 (NACE Rev. 2) sections. `section_name_emta` is the exact upper-case text EMTA
+      puts in its `Activity` column. If EMTA switches to EMTAK 2025 (NACE Rev. 2.1) names, the
+      relationships test on stg_emta__taxpayer_years fails and this seed must be extended.
+    config:
+      column_types:
+        section_code: varchar
+        section_name_emta: varchar
+        section_short_name: varchar
+    columns:
+      - name: section_code
+        data_tests: [unique, not_null]
+      - name: section_name_emta
+        data_tests: [unique, not_null]

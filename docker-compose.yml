@@ -1,0 +1,37 @@
+# Local, reproducible runs. ./data on the host is the only state (snapshots, lake, warehouse).
+#
+#   docker compose run --rm pipeline run        # download + convert + build + publish
+#   docker compose up app                       # http://localhost:8501
+#   docker compose up airflow                   # http://localhost:8080 (see logs for password)
+services:
+  pipeline:
+    build: .
+    image: eesti-company-pulse:latest
+    volumes:
+      - ./data:/data
+    profiles: ["manual"]
+
+  app:
+    image: eesti-company-pulse:latest
+    build: .
+    entrypoint: ["streamlit", "run", "app/streamlit_app.py",
+                 "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/data:ro
+
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    image: eesti-company-pulse-airflow:latest
+    command: >
+      bash -c "airflow db migrate
+      && airflow pools set duckdb_writer 1 'DuckDB allows one writer'
+      && exec airflow standalone"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      - ./orchestration/airflow/dags:/opt/airflow/dags:ro

@@ -1,0 +1,12 @@
+.git
+.venv
+.venv-airflow
+data
+work
+outputs
+dbt/target
+dbt/logs
+orchestration/airflow/logs
+orchestration/airflow/airflow.db
+orchestration/airflow/airflow.cfg
+**/__pycache__

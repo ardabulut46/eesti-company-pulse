@@ -1,0 +1,113 @@
+version: 2
+
+models:
+  - name: fct_company_quarter
+    description: >
+      Company x published quarter (EMTA type Company). Values: euros and headcount as published
+      by EMTA, from the newest release containing the quarter. Sector/county/region come from the
+      first stored release after quarter end (attributes_are_point_in_time says whether that is
+      close enough to count as point-in-time). Register attributes are as of quarter end when the
+      register snapshots reach back that far (register_attributes_basis).
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registry_code, tax_year, quarter]
+    columns:
+      - name: registry_code
+        data_tests: [not_null]
+      - name: turnover
+        description: >
+          VAT-declared supply (rows 1-3 of the VAT return) incl. reverse-charge purchases, in euros,
+          shifted one month: Q1 = December-February. Can be negative (corrections). NULL = not published.
+      - name: labour_taxes
+        description: Withheld income tax, social tax, funded pension, unemployment insurance paid in the quarter (cash basis), euros.
+      - name: state_taxes
+        description: All state taxes paid in the quarter, euros. 0 when refunds exceed payments.
+      - name: employees
+        description: Persons with a valid employment-register entry on the last day of the quarter, excluding board members. NULL is not zero.
+      - name: section_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('emtak_sections')
+                field: section_code
+              config: {where: "section_code <> '?'"}
+      - name: attributes_release_date
+        data_tests: [not_null]
+      - name: register_attributes_basis
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['as_of_quarter_end', 'earliest_known_version', 'not_in_register_snapshots']
+
+  - name: mart_sector_region_quarter
+    description: >
+      Pulse table: EMTAK section x county x region group x quarter with additive sums. Roll up by
+      summing, then compute ratios, e.g. matched YoY employee growth =
+      sum(employees_matched_current_yoy) / sum(employees_matched_previous_yoy) - 1.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [year_quarter, section_code, region_group, county]
+      - expression_is_true:
+          arguments:
+            expression: "coalesce(employees, 0) >= coalesce(employees_matched_current_yoy, 0)"
+
+  - name: fct_annual_fundamentals
+    description: Company x fiscal year fundamentals from annual reports (business legal forms), pivoted from elements.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registry_code, fiscal_year]
+    columns:
+      - name: report_id
+        data_tests: [unique, not_null]
+      - name: fte_employees
+        data_tests:
+          - expression_is_true:
+              arguments:
+                expression: "fte_employees is null or fte_employees >= 0"
+
+  - name: mart_sector_fundamentals_year
+    description: Sector x fiscal year medians and totals from annual reports.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [fiscal_year, section_code]
+
+  - name: mart_emta_vs_annual_report
+    description: Company x fiscal year comparison of EMTA quarterly totals with annual-report figures.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registry_code, fiscal_year]
+
+  - name: mart_join_coverage
+    description: Every EMTA company code with its register match status and reason.
+    columns:
+      - name: registry_code
+        data_tests: [unique, not_null]
+      - name: match_reason
+        data_tests: [not_null]
+
+  - name: dim_company
+    description: Current attributes per legal entity (register + EMTA).
+    columns:
+      - name: registry_code
+        data_tests: [unique, not_null]
+
+  - name: dim_company_history
+    description: SCD Type 2 register history (valid_from inclusive, valid_to exclusive, observation dates).
+
+  - name: mart_pipeline_snapshots
+    description: Snapshot catalogue with conversion counts.
+
+  - name: mart_emta_revisions_summary
+    description: Counts and sums of EMTA revisions between consecutive releases.
+
+  - name: mart_data_quality
+    description: Every rule that removes, nulls, or flags data, with affected counts.
+    columns:
+      - name: rule
+        data_tests: [unique, not_null]

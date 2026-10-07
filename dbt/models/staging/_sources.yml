@@ -1,0 +1,68 @@
+version: 2
+
+sources:
+  - name: lake
+    description: >
+      Parquet copies of the immutable raw snapshots, written by `pulse convert`
+      (one file per source per snapshot: lake/<source>/<snapshot_id>/data.parquet).
+      All source columns are VARCHAR; lineage columns start with an underscore.
+      Self-employed persons and non-residents are already removed at this layer (privacy).
+    config:
+      loaded_at_field: _retrieved_at
+      meta:
+        external_location: >-
+          read_parquet('{{ env_var("PULSE_DATA_DIR", "../data") }}/lake/{name}/*/data.parquet',
+          union_by_name = true)
+    tables:
+      - name: rik_basic
+        description: e-Business Register basic data (ettevotja_rekvisiidid__lihtandmed), daily.
+        config:
+          freshness:
+            warn_after: {count: 2, period: day}
+            error_after: {count: 4, period: day}
+      - name: emta_current
+        description: EMTA taxes/turnover/employees, current and previous year (quarterly release).
+        config:
+          freshness:
+            warn_after: {count: 100, period: day}
+            error_after: {count: 120, period: day}
+      - name: emta_history
+        description: EMTA taxes/turnover/employees, earlier years (quarterly release).
+        config:
+          freshness:
+            warn_after: {count: 100, period: day}
+            error_after: {count: 120, period: day}
+      - name: rik_reports_general
+        description: Annual reports, general information (1.aruannete_yldandmed), monthly.
+        config:
+          freshness:
+            warn_after: {count: 40, period: day}
+            error_after: {count: 70, period: day}
+      - name: rik_elements
+        description: Annual-report key elements, one source file per fiscal year (4.<year>_aruannete_elemendid), monthly.
+        config:
+          meta:
+            external_location: >-
+              read_parquet('{{ env_var("PULSE_DATA_DIR", "../data") }}/lake/rik_elements_*/*/data.parquet',
+              union_by_name = true)
+          freshness:
+            warn_after: {count: 40, period: day}
+            error_after: {count: 70, period: day}
+
+  - name: pipeline
+    description: Bookkeeping files written by the Python ingestion (`pulse download` / `pulse convert`).
+    tables:
+      - name: manifest
+        description: One row per stored snapshot (new content only).
+        config:
+          meta:
+            external_location: >-
+              read_csv('{{ env_var("PULSE_DATA_DIR", "../data") }}/raw/manifest.csv', header = true,
+              all_varchar = true)
+      - name: conversions
+        description: One row per converted snapshot, with row counts kept and dropped.
+        config:
+          meta:
+            external_location: >-
+              read_csv('{{ env_var("PULSE_DATA_DIR", "../data") }}/lake/conversions.csv', header = true,
+              all_varchar = true)

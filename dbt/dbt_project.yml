@@ -1,0 +1,39 @@
+name: pulse
+version: "1.0.0"
+config-version: 2
+profile: pulse
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # Minimum share of EMTA companies (latest release) that must match the latest register snapshot.
+  # Real data: ~98%. The CI fixture is tiny and deliberately contains unmatched codes.
+  min_register_match_rate: 0.97
+  # A quarter's sector/county counts as point-in-time when it comes from a release published
+  # at most this many days after the quarter ended (EMTA publishes ~10 days after).
+  point_in_time_max_lag_days: 45
+
+models:
+  pulse:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: table
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: marts
+
+seeds:
+  pulse:
+    +schema: reference
+
+data_tests:
+  pulse:
+    +severity: error

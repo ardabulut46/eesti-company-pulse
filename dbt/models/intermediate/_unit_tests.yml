@@ -1,0 +1,116 @@
+version: 2
+
+# Unit tests run the model SQL on hand-made input rows. They prove the history rules before the
+# real data contains any history (the first real register change needs a second daily snapshot).
+
+unit_tests:
+  - name: scd2_change_absence_return_and_new
+    description: >
+      Four daily snapshots. 10000001 changes status on day 3. 10000002 is missing on day 2 and
+      back on day 3. 10000003 disappears from day 3 on. 10000004 first appears on day 3.
+    model: int_rik__company_history
+    given:
+      - input: ref('stg_rik__companies')
+        rows:
+          - {registry_code: '10000001', snapshot_date: 2026-01-01, company_name: A OÜ, status_code: R}
+          - {registry_code: '10000001', snapshot_date: 2026-01-02, company_name: A OÜ, status_code: R}
+          - {registry_code: '10000001', snapshot_date: 2026-01-03, company_name: A OÜ, status_code: L}
+          - {registry_code: '10000001', snapshot_date: 2026-01-04, company_name: A OÜ, status_code: L}
+          - {registry_code: '10000002', snapshot_date: 2026-01-01, company_name: B OÜ, status_code: R}
+          - {registry_code: '10000002', snapshot_date: 2026-01-03, company_name: B OÜ, status_code: R}
+          - {registry_code: '10000002', snapshot_date: 2026-01-04, company_name: B OÜ, status_code: R}
+          - {registry_code: '10000003', snapshot_date: 2026-01-01, company_name: C OÜ, status_code: R}
+          - {registry_code: '10000003', snapshot_date: 2026-01-02, company_name: C OÜ, status_code: R}
+          - {registry_code: '10000004', snapshot_date: 2026-01-03, company_name: D OÜ, status_code: R}
+          - {registry_code: '10000004', snapshot_date: 2026-01-04, company_name: D OÜ, status_code: R}
+    expect:
+      rows:
+        - {registry_code: '10000001', version_number: 1, valid_from: 2026-01-01, valid_to: 2026-01-03, is_present: true, status_code: R, is_current: false}
+        - {registry_code: '10000001', version_number: 2, valid_from: 2026-01-03, valid_to: null, is_present: true, status_code: L, is_current: true}
+        - {registry_code: '10000002', version_number: 1, valid_from: 2026-01-01, valid_to: 2026-01-02, is_present: true, status_code: R, is_current: false}
+        - {registry_code: '10000002', version_number: 2, valid_from: 2026-01-02, valid_to: 2026-01-03, is_present: false, status_code: null, is_current: false}
+        - {registry_code: '10000002', version_number: 3, valid_from: 2026-01-03, valid_to: null, is_present: true, status_code: R, is_current: true}
+        - {registry_code: '10000003', version_number: 1, valid_from: 2026-01-01, valid_to: 2026-01-03, is_present: true, status_code: R, is_current: false}
+        - {registry_code: '10000003', version_number: 2, valid_from: 2026-01-03, valid_to: null, is_present: false, status_code: null, is_current: true}
+        - {registry_code: '10000004', version_number: 1, valid_from: 2026-01-03, valid_to: null, is_present: true, status_code: R, is_current: true}
+
+  - name: scd2_null_change_is_detected
+    description: A value moving from one column to NULL in another must still start a new version.
+    model: int_rik__company_history
+    given:
+      - input: ref('stg_rik__companies')
+        rows:
+          - {registry_code: '10000005', snapshot_date: 2026-01-01, company_name: E OÜ, legal_form_subtype: X, vat_number: null}
+          - {registry_code: '10000005', snapshot_date: 2026-01-02, company_name: E OÜ, legal_form_subtype: null, vat_number: X}
+    expect:
+      rows:
+        - {registry_code: '10000005', version_number: 1, valid_from: 2026-01-01, valid_to: 2026-01-02}
+        - {registry_code: '10000005', version_number: 2, valid_from: 2026-01-02, valid_to: null}
+
+  - name: emta_unpivot_keeps_quarters_with_nulls
+    description: One wide row -> exactly four quarter rows, including quarters with NULL values.
+    model: int_emta__quarters_all_releases
+    given:
+      - input: ref('stg_emta__taxpayer_years')
+        rows:
+          - {registry_code: '10000001', taxpayer_type: Company, tax_year: 2026, release_date: 2026-07-10,
+             state_taxes_q1: 100, labour_taxes_q1: 50, turnover_q1: 1000, employees_q1: 3,
+             state_taxes_q2: 120, labour_taxes_q2: null, turnover_q2: 900, employees_q2: null}
+    expect:
+      rows:
+        - {quarter: 1, quarter_end_date: 2026-03-31, is_published: true, has_any_value: true, employees: 3}
+        - {quarter: 2, quarter_end_date: 2026-06-30, is_published: true, has_any_value: true, employees: null}
+        - {quarter: 3, quarter_end_date: 2026-09-30, is_published: false, has_any_value: false, employees: null}
+        - {quarter: 4, quarter_end_date: 2026-12-31, is_published: false, has_any_value: false, employees: null}
+
+  - name: emta_latest_appearance_keeps_deleted_companies
+    description: >
+      Release 2 revises company 1 and no longer contains company 2 (deleted). The newest value is
+      used for company 1; company 2 keeps its value from release 1, flagged.
+    model: int_emta__quarters_latest
+    given:
+      - input: ref('int_emta__quarters_all_releases')
+        rows:
+          - {registry_code: '10000001', taxpayer_type: Company, tax_year: 2026, quarter: 1, release_date: 2026-04-10, is_published: true, turnover: 1000, _retrieved_at: '2026-04-11 00:00:00'}
+          - {registry_code: '10000001', taxpayer_type: Company, tax_year: 2026, quarter: 1, release_date: 2026-07-10, is_published: true, turnover: 1100, _retrieved_at: '2026-07-11 00:00:00'}
+          - {registry_code: '10000002', taxpayer_type: Company, tax_year: 2026, quarter: 1, release_date: 2026-04-10, is_published: true, turnover: 500, _retrieved_at: '2026-04-11 00:00:00'}
+          - {registry_code: '10000001', taxpayer_type: Company, tax_year: 2026, quarter: 3, release_date: 2026-07-10, is_published: false, turnover: null, _retrieved_at: '2026-07-11 00:00:00'}
+    expect:
+      rows:
+        - {registry_code: '10000001', quarter: 1, turnover: 1100, value_release_date: 2026-07-10, is_in_latest_release: true, n_releases_seen: 2}
+        - {registry_code: '10000002', quarter: 1, turnover: 500, value_release_date: 2026-04-10, is_in_latest_release: false, n_releases_seen: 1}
+
+  - name: emta_revisions_between_releases
+    model: int_emta__revisions
+    given:
+      - input: ref('int_emta__quarters_all_releases')
+        rows:
+          - {registry_code: '10000001', taxpayer_type: Company, tax_year: 2026, quarter: 1, release_date: 2026-04-10, is_published: true, turnover: 1000, employees: 3, _retrieved_at: '2026-04-11 00:00:00'}
+          - {registry_code: '10000001', taxpayer_type: Company, tax_year: 2026, quarter: 1, release_date: 2026-07-10, is_published: true, turnover: 1100, employees: 3, _retrieved_at: '2026-07-11 00:00:00'}
+    expect:
+      rows:
+        - {registry_code: '10000001', metric: turnover, previous_value: 1000, value: 1100, delta: 100, revision_kind: changed}
+
+  - name: element_resolution_rules
+    description: >
+      Report 1: Revenue once (single), Assets twice with the same value (identical copies),
+      CurrentLiabilities twice with different values (conflict -> NULL), and a PDF row (excluded).
+      Report 2 appears in two releases; only the newest is used.
+    model: int_rik__element_values
+    given:
+      - input: ref('stg_rik__report_elements')
+        rows:
+          - {report_id: '1', table_name: Kasumiaruanne skeem 1, element_code: Revenue, value: 100, _retrieved_at: '2026-09-01 00:00:00'}
+          - {report_id: '1', table_name: Bilanss, element_code: Assets, value: 50, _retrieved_at: '2026-09-01 00:00:00'}
+          - {report_id: '1', table_name: Bilanss, element_code: Assets, value: 50, _retrieved_at: '2026-09-01 00:00:00'}
+          - {report_id: '1', table_name: Bilanss, element_code: CurrentLiabilities, value: 0, _retrieved_at: '2026-09-01 00:00:00'}
+          - {report_id: '1', table_name: Bilanss, element_code: CurrentLiabilities, value: 9, _retrieved_at: '2026-09-01 00:00:00'}
+          - {report_id: '1', table_name: PDF, element_code: null, value: 123, _retrieved_at: '2026-09-01 00:00:00'}
+          - {report_id: '2', table_name: Bilanss, element_code: Assets, value: 70, _retrieved_at: '2026-08-01 00:00:00'}
+          - {report_id: '2', table_name: Bilanss, element_code: Assets, value: 75, _retrieved_at: '2026-09-01 00:00:00'}
+    expect:
+      rows:
+        - {element_report_id: '1', element_code: Revenue, value: 100, resolution: single}
+        - {element_report_id: '1', element_code: Assets, value: 50, resolution: identical_copies}
+        - {element_report_id: '1', element_code: CurrentLiabilities, value: null, resolution: conflict}
+        - {element_report_id: '2', element_code: Assets, value: 75, resolution: single}

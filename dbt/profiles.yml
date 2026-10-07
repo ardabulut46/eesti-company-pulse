@@ -1,0 +1,11 @@
+# No credentials here: DuckDB is a local file. `pulse` sets PULSE_DATA_DIR and DBT_PROFILES_DIR.
+pulse:
+  target: local
+  outputs:
+    local:
+      type: duckdb
+      path: "{{ env_var('PULSE_DATA_DIR', '../data') }}/warehouse/pulse.duckdb"
+      threads: 4
+      settings:
+        memory_limit: "{{ env_var('PULSE_DUCKDB_MEMORY', '8GB') }}"
+        preserve_insertion_order: false

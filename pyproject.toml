@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eesti-company-pulse"
+version = "0.1.0"
+description = "Snapshot pipeline on Estonian EMTA tax data and e-Business Register open data"
+requires-python = ">=3.11"
+dependencies = [
+    "duckdb>=1.1,<2",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dbt = ["dbt-duckdb>=1.9,<2"]
+app = ["streamlit>=1.40", "plotly>=5.20", "pandas>=2.1"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+pulse = "pulse.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pulse"]
+known-local-folder = ["synthetic_sources"]
