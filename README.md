@@ -6,6 +6,10 @@ An end-to-end data-engineering pipeline on Estonian government open data: quarte
 
 **Stack:** Python · DuckDB · Parquet · dbt · Airflow · Streamlit · Docker · GitHub Actions
 
+![Pulse tab: employees year on year by region and sector, 2026 Q2](assets/dashboard-pulse.png)
+
+![Annual fundamentals tab: revenue per FTE employee and median net margin by sector, 2024](assets/dashboard-fundamentals.png)
+
 ## Architecture
 
 ```mermaid
